@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Crypto Arbitrage Monitor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.0/socket.io.js"></script>
+    <style>
+        :root {
+            --bg: #050816;
+            --bg-elevated: rgba(15, 23, 42, 0.9);
+            --accent: #22c55e;
+            --accent-soft: rgba(34, 197, 94, 0.18);
+            --accent-soft-strong: rgba(34, 197, 94, 0.35);
+            --danger: #f97373;
+            --text: #e5e7eb;
+            --muted: #9ca3af;
+            --border-subtle: rgba(148, 163, 184, 0.3);
+            --border-strong: rgba(148, 163, 184, 0.6);
+            --shadow-soft: 0 20px 45px rgba(15, 23, 42, 0.85);
+        }
+
+        [data-theme="light"] {
+            --bg: #f3f4f6;
+            --bg-elevated: #ffffff;
+            --accent: #16a34a;
+            --accent-soft: rgba(22, 163, 74, 0.08);
+            --accent-soft-strong: rgba(22, 163, 74, 0.18);
+            --danger: #ef4444;
+            --text: #020617;
+            --muted: #6b7280;
+            --border-subtle: rgba(148, 163, 184, 0.35);
+            --border-strong: rgba(148, 163, 184, 0.7);
+            --shadow-soft: 0 18px 40px rgba(15, 23, 42, 0.18);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: stretch;
+            justify-content: center;
+            background: radial-gradient(circle at top left, #1e293b 0, #020617 32%, #020617 100%);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+        }
+
+        .app {
+            flex: 1;
+            max-width: 1120px;
+            padding: 28px 20px 32px;
+            margin: 18px 14px;
+            border-radius: 24px;
+            background: radial-gradient(circle at top, rgba(56, 189, 248, 0.05), transparent 55%) var(--bg);
+            box-shadow: var(--shadow-soft);
+            border: 1px solid rgba(148, 163, 184, 0.25);
+            backdrop-filter: blur(26px);
+        }
+
+        .app-header {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 18px;
+        }
+
+        .title-block {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .app-title {
+            font-size: 1.6rem;
+            letter-spacing: 0.04em;
+            font-weight: 650;
+        }
+
+        .title-pill {
+            padding: 4px 10px;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            background: radial-gradient(circle at 20% 0, rgba(34, 197, 94, 0.24), rgba(34, 197, 94, 0.09));
+            border: 1px solid rgba(34, 197, 94, 0.55);
+            color: var(--accent);
+        }
+
+        .subtitle {
+            font-size: 0.83rem;
+            color: var(--muted);
+            max-width: 520px;
+        }
+
+        .header-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .pill-metric {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 999px;
+            padding: 6px 12px;
+            border: 1px solid var(--border-subtle);
+            background: linear-gradient(135deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.96)), var(--bg-elevated);
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+
+        .pill-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: radial-gradient(circle at 30% 30%, #bbf7d0, #22c55e);
+            box-shadow: 0 0 0 4px rgba(34, 197, 94, 0.22);
+        }
+
+        .pill-label {
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+        }
+
+        .pill-value {
+            font-weight: 550;
+            color: var(--accent);
+        }
+
+        .pill-secondary {
+            background: rgba(15, 23, 42, 0.9);
+        }
+
+        .pill-secondary .pill-dot {
+            background: radial-gradient(circle at 30% 30%, #fde68a, #facc15);
+            box-shadow: 0 0 0 4px rgba(250, 204, 21, 0.18);
+        }
+
+        .pill-secondary .pill-value {
+            color: #eab308;
+        }
+
+        .controls-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.2fr) auto;
+            gap: 14px;
+            margin-bottom: 18px;
+            align-items: center;
+        }
+
+        @media (max-width: 768px) {
+            .app {
+                padding: 22px 16px 26px;
+                margin: 12px 10px;
+            }
+
+            .controls-row {
+                grid-template-columns: minmax(0, 1.4fr) minmax(0, 1.4fr);
+                grid-auto-rows: auto;
+            }
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .control-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+        }
+
+        .control-label {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: var(--muted);
+        }
+
+        .control-caption {
+            font-size: 0.72rem;
+            color: var(--muted);
+        }
+
+        .field {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-radius: 999px;
+            padding: 7px 10px;
+            border: 1px solid var(--border-subtle);
+            background: radial-gradient(circle at 0 0, rgba(15, 23, 42, 0.55), rgba(15, 23, 42, 0.95));
+        }
+
+        [data-theme="light"] .field {
+            background: linear-gradient(135deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.98));
+        }
+
+        .field-prefix {
+            font-size: 0.76rem;
+            color: var(--muted);
+        }
+
+        .field-input {
+            flex: 1;
+            border: none;
+            outline: none;
+            background: transparent;
+            color: var(--text);
+            font-size: 0.86rem;
+        }
+
+        .field-input::placeholder {
+            color: rgba(148, 163, 184, 0.7);
+        }
+
+        .field-suffix {
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+
+        input[type="number"]::-webkit-outer-spin-button,
+        input[type="number"]::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type="number"] {
+            appearance: textfield;
+            -moz-appearance: textfield;
+        }
+
+        .toggle-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 7px;
+            border-radius: 999px;
+            padding: 6px 11px;
+            border: 1px solid var(--border-subtle);
+            font-size: 0.75rem;
+        }
+
+        .chip-soft {
+            background: radial-gradient(circle at 0 0, rgba(148, 163, 184, 0.36), rgba(15, 23, 42, 0.98));
+        }
+
+        .chip-label {
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: var(--muted);
+        }
+
+        .chip-value {
+            font-weight: 540;
+        }
+
+        .switch {
+            position: relative;
+            width: 44px;
+            height: 22px;
+            border-radius: 999px;
+            background: rgba(30, 64, 175, 0.75);
+            border: 1px solid rgba(129, 140, 248, 0.6);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            padding: 2px;
+        }
+
+        .switch-thumb {
+            width: 17px;
+            height: 17px;
+            border-radius: 999px;
+            background: radial-gradient(circle at 30% 30%, #bfdbfe, #60a5fa);
+            transform: translateX(0);
+            transition: transform 160ms ease-out;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.35);
+        }
+
+        .switch[data-state="off"] {
+            background: rgba(15, 23, 42, 0.9);
+            border-color: var(--border-subtle);
+        }
+
+        .switch[data-state="off"] .switch-thumb {
+            transform: translateX(20px);
+            background: radial-gradient(circle at 30% 30%, #fecaca, #ef4444);
+            box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.28);
+        }
+
+        .primary-button {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: 999px;
+            border: 1px solid rgba(148, 163, 184, 0.6);
+            background: radial-gradient(circle at 0 0, rgba(59, 130, 246, 0.7), rgba(15, 23, 42, 0.96));
+            color: #eff6ff;
+            font-size: 0.78rem;
+            font-weight: 540;
+            cursor: pointer;
+        }
+
+        .primary-button span {
+            font-size: 0.9rem;
+        }
+
+        .primary-button:hover {
+            border-color: rgba(191, 219, 254, 0.95);
+        }
+
+        .theme-pill {
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            padding: 4px;
+            border: 1px solid var(--border-subtle);
+            background: rgba(15, 23, 42, 0.9);
+        }
+
+        .theme-pill button {
+            border-radius: 999px;
+            border: none;
+            padding: 4px 8px;
+            font-size: 0.72rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--muted);
+            background: transparent;
+            cursor: pointer;
+        }
+
+        .theme-pill button[data-active="true"] {
+            background: rgba(15, 23, 42, 0.95);
+            color: var(--text);
+        }
+
+        [data-theme="light"] .theme-pill {
+            background: rgba(248, 250, 252, 0.96);
+        }
+
+        .table-card {
+            border-radius: 18px;
+            background: radial-gradient(circle at top, rgba(30, 64, 175, 0.18), transparent 60%), var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            overflow: hidden;
+        }
+
+        .table-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 16px;
+            border-bottom: 1px solid var(--border-subtle);
+            font-size: 0.82rem;
+        }
+
+        .table-header-title {
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: var(--muted);
+        }
+
+        .table-header-meta {
+            display: flex;
+            gap: 12px;
+            align-items: baseline;
+            color: var(--muted);
+            font-size: 0.78rem;
+        }
+
+        .table-header-meta strong {
+            color: var(--text);
+        }
+
+        .table-wrapper {
+            max-height: 520px;
+            overflow: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.82rem;
+        }
+
+        thead {
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            background: linear-gradient(to bottom, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.96));
+        }
+
+        [data-theme="light"] thead {
+            background: linear-gradient(to bottom, rgba(241, 245, 249, 0.98), rgba(241, 245, 249, 0.96));
+        }
+
+        th,
+        td {
+            padding: 9px 14px;
+            text-align: left;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        }
+
+        th {
+            font-weight: 600;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.18em;
+            color: var(--muted);
+        }
+
+        tbody tr:nth-child(2n) {
+            background: rgba(15, 23, 42, 0.64);
+        }
+
+        [data-theme="light"] tbody tr:nth-child(2n) {
+            background: rgba(243, 244, 246, 0.9);
+        }
+
+        tbody tr:hover {
+            background: radial-gradient(circle at 0 0, var(--accent-soft-strong), rgba(15, 23, 42, 0.96));
+        }
+
+        .path-cell {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.78rem;
+        }
+
+        .path-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            border-radius: 999px;
+            padding: 3px 8px;
+            background: rgba(15, 23, 42, 0.8);
+            border: 1px solid rgba(148, 163, 184, 0.45);
+        }
+
+        [data-theme="light"] .path-chip {
+            background: rgba(248, 250, 252, 0.98);
+        }
+
+        .path-chip span {
+            color: var(--muted);
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+        }
+
+        .path-main {
+            white-space: nowrap;
+        }
+
+        .profit-cell {
+            font-variant-numeric: tabular-nums;
+        }
+
+        .profit-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 6px;
+            min-width: 92px;
+            border-radius: 999px;
+            padding: 3px 10px;
+            font-size: 0.8rem;
+        }
+
+        .profit-badge.positive {
+            background: radial-gradient(circle at 0 0, var(--accent-soft), rgba(15, 23, 42, 0.96));
+            color: var(--accent);
+            border: 1px solid rgba(34, 197, 94, 0.55);
+        }
+
+        .profit-badge.negative {
+            background: radial-gradient(circle at 0 0, rgba(248, 113, 113, 0.15), rgba(15, 23, 42, 0.98));
+            color: var(--danger);
+            border: 1px solid rgba(248, 113, 113, 0.5);
+        }
+
+        .profit-pill-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            background: currentColor;
+        }
+
+        .empty-state {
+            padding: 20px 16px;
+            font-size: 0.82rem;
+            color: var(--muted);
+        }
+
+        .detail-card {
+            margin-top: 16px;
+            border-radius: 16px;
+            border: 1px solid var(--border-subtle);
+            background: radial-gradient(circle at top, rgba(56, 189, 248, 0.08), transparent 60%), var(--bg-elevated);
+            padding: 12px 16px 14px;
+            font-size: 0.8rem;
+        }
+
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+
+        .detail-title {
+            text-transform: uppercase;
+            letter-spacing: 0.16em;
+            color: var(--muted);
+            font-size: 0.74rem;
+        }
+
+        .detail-main-path {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.78rem;
+            margin-bottom: 8px;
+        }
+
+        .detail-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .detail-pill {
+            border-radius: 999px;
+            padding: 4px 10px;
+            border: 1px solid var(--border-subtle);
+            font-size: 0.74rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .detail-pill strong {
+            font-weight: 550;
+        }
+
+        .detail-legs {
+            margin-top: 6px;
+            border-top: 1px dashed rgba(148, 163, 184, 0.4);
+            padding-top: 6px;
+            max-height: 200px;
+            overflow: auto;
+        }
+
+        .detail-leg-row {
+            display: grid;
+            grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr) minmax(0, 1fr);
+            gap: 8px;
+            padding: 3px 0;
+            align-items: baseline;
+        }
+
+        .detail-leg-pair {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.78rem;
+        }
+
+        .detail-leg-rate {
+            font-variant-numeric: tabular-nums;
+            font-size: 0.78rem;
+        }
+
+        .detail-leg-profit {
+            font-variant-numeric: tabular-nums;
+            font-size: 0.78rem;
+            text-align: right;
+        }
+
+        .detail-leg-profit.positive {
+            color: var(--accent);
+        }
+
+        .detail-leg-profit.negative {
+            color: var(--danger);
+        }
+
+        .detail-close {
+            border-radius: 999px;
+            border: 1px solid var(--border-subtle);
+            background: transparent;
+            color: var(--muted);
+            font-size: 0.74rem;
+            padding: 2px 8px;
+            cursor: pointer;
+        }
+
+        .detail-close:hover {
+            color: var(--text);
+            border-color: var(--border-strong);
+        }
+    </style>
+</head>
+<body data-theme="dark">
+    <div class="app">
+        <header class="app-header">
+            <div class="title-block">
+                <div class="title-row">
+                    <h1 class="app-title">Crypto Arbitrage Monitor</h1>
+                    <span class="title-pill">Multi‑leg cycles • Live</span>
+                </div>
+                <div class="subtitle">
+                    Tracking USDT based multi‑hop cycles with fees, volume focus and optional slippage awareness.
+                </div>
+            </div>
+            <div class="header-actions">
+                <div class="pill-metric">
+                    <span class="pill-dot"></span>
+                    <span class="pill-label">Best Cycle</span>
+                    <span class="pill-value" id="best-profit">–</span>
+                </div>
+                <div class="pill-metric pill-secondary">
+                    <span class="pill-dot"></span>
+                    <span class="pill-label">Opportunities</span>
+                    <span class="pill-value" id="opp-count">0</span>
+                </div>
+                <div class="theme-pill">
+                    <button id="theme-dark" data-active="true">Dark</button>
+                    <button id="theme-light" data-active="false">Light</button>
+                </div>
+            </div>
+        </header>
+
+        <section class="controls-row">
+            <div class="control-group">
+                <div class="control-label-row">
+                    <div class="control-label">Min Profit Filter</div>
+                    <div class="control-caption">Client side only</div>
+                </div>
+                <div class="field">
+                    <span class="field-prefix">≥</span>
+                    <input id="min-profit" class="field-input" type="number" step="0.01" value="0.00" placeholder="0.00">
+                    <span class="field-suffix">%</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="control-label-row">
+                    <div class="control-label">Live Stream</div>
+                    <div class="control-caption" id="live-status-caption">Receiving updates</div>
+                </div>
+                <div class="toggle-row">
+                    <div class="chip chip-soft">
+                        <span class="chip-label">Mode</span>
+                        <span class="chip-value" id="live-mode-label">Live</span>
+                    </div>
+                    <div id="live-toggle" class="switch" data-state="on">
+                        <div class="switch-thumb"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="control-label-row">
+                    <div class="control-label">Snapshot</div>
+                    <div class="control-caption" id="last-updated">Waiting for data</div>
+                </div>
+                <button id="refresh-button" class="primary-button">
+                    <span>↻</span>
+                    Refresh view
+                </button>
+            </div>
+        </section>
+
+        <section class="table-card">
+            <div class="table-header">
+                <div class="table-header-title">Arbitrage Cycles</div>
+                <div class="table-header-meta">
+                    <span><strong id="table-visible-count">0</strong> visible</span>
+                    <span id="table-filter-label">Filter ≥ 0.00%</span>
+                </div>
+            </div>
+            <div class="table-wrapper">
+                <table id="arbitrage-table">
+                    <thead>
+                        <tr>
+                            <th>Path</th>
+                            <th>Legs</th>
+                            <th>Profit After Fees</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr class="empty-state-row">
+                            <td colspan="3" class="empty-state">Waiting for first live snapshot from the engine.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+        <section class="detail-card" id="detail-card" style="display: none;">
+            <div class="detail-header">
+                <div class="detail-title">Selected Cycle</div>
+                <button id="detail-close" class="detail-close">Clear</button>
+            </div>
+            <div class="detail-main-path" id="detail-path"></div>
+            <div class="detail-meta-row">
+                <div class="detail-pill">
+                    <span>Legs</span>
+                    <strong id="detail-legs-count">0</strong>
+                </div>
+                <div class="detail-pill">
+                    <span>Profit</span>
+                    <strong id="detail-profit">0.0000%</strong>
+                </div>
+                <div class="detail-pill">
+                    <span>Total return</span>
+                    <strong id="detail-return">1.0000×</strong>
+                </div>
+            </div>
+            <div class="detail-legs" id="detail-legs"></div>
+        </section>
+    </div>
+
+    <script>
+        const socket = io();
+        let liveUpdates = true;
+        let lastData = {};
+        let selectedPath = null;
+
+        const minProfitInput = document.getElementById("min-profit");
+        const liveToggle = document.getElementById("live-toggle");
+        const liveModeLabel = document.getElementById("live-mode-label");
+        const liveStatusCaption = document.getElementById("live-status-caption");
+        const bestProfitEl = document.getElementById("best-profit");
+        const oppCountEl = document.getElementById("opp-count");
+        const lastUpdatedEl = document.getElementById("last-updated");
+        const tableVisibleCountEl = document.getElementById("table-visible-count");
+        const tableFilterLabelEl = document.getElementById("table-filter-label");
+        const refreshButton = document.getElementById("refresh-button");
+        const themeDarkBtn = document.getElementById("theme-dark");
+        const themeLightBtn = document.getElementById("theme-light");
+        const root = document.body;
+        const detailCard = document.getElementById("detail-card");
+        const detailCloseBtn = document.getElementById("detail-close");
+        const detailPathEl = document.getElementById("detail-path");
+        const detailLegsCountEl = document.getElementById("detail-legs-count");
+        const detailProfitEl = document.getElementById("detail-profit");
+        const detailReturnEl = document.getElementById("detail-return");
+        const detailLegsEl = document.getElementById("detail-legs");
+
+        function formatProfit(value) {
+            return value.toFixed(4) + "%";
+        }
+
+        function updateSummary(entries, totalOpportunities) {
+            if (entries.length === 0) {
+                bestProfitEl.textContent = "–";
+                oppCountEl.textContent = String(totalOpportunities || 0);
+                tableVisibleCountEl.textContent = "0";
+                return;
+            }
+            const best = entries[0].profit;
+            bestProfitEl.textContent = formatProfit(best);
+            oppCountEl.textContent = String(totalOpportunities);
+            tableVisibleCountEl.textContent = String(entries.length);
+        }
+
+        function renderTable(data) {
+            lastData = data || {};
+            const tableBody = document.querySelector("#arbitrage-table tbody");
+            tableBody.innerHTML = "";
+
+            const minProfit = parseFloat(minProfitInput.value) || 0;
+            tableFilterLabelEl.textContent = "Filter ≥ " + minProfit.toFixed(2) + "%";
+
+            const entries = Object.entries(lastData)
+                .map(([path, values]) => {
+                    const profit = Number(values.profit_percent || 0);
+                    const legCount = Array.isArray(values.path) ? Math.max(0, values.path.length - 1) : Math.max(0, path.split("->").length - 1);
+                    const totalReturn = Number(values.total_return || 1);
+                    const legRates = Array.isArray(values.leg_rates) ? values.leg_rates : null;
+                    return { path, profit, legCount, totalReturn, legRates };
+                })
+                .filter(e => e.profit >= minProfit)
+                .sort((a, b) => b.profit - a.profit);
+
+            if (entries.length === 0) {
+                const row = document.createElement("tr");
+                row.className = "empty-state-row";
+                const cell = document.createElement("td");
+                cell.colSpan = 3;
+                cell.className = "empty-state";
+                cell.textContent = "No cycles passing the current filter yet.";
+                row.appendChild(cell);
+                tableBody.appendChild(row);
+                updateSummary(entries, Object.keys(lastData || {}).length);
+                return;
+            }
+
+            entries.forEach(entry => {
+                const row = document.createElement("tr");
+
+                const pathCell = document.createElement("td");
+                pathCell.className = "path-cell";
+                pathCell.innerHTML = '<div class="path-chip"><span>Cycle</span><span class="path-main">' + entry.path + "</span></div>";
+
+                const legsCell = document.createElement("td");
+                legsCell.textContent = String(entry.legCount);
+
+                const profitCell = document.createElement("td");
+                profitCell.className = "profit-cell";
+                const badge = document.createElement("div");
+                badge.className = "profit-badge " + (entry.profit >= 0 ? "positive" : "negative");
+                const dot = document.createElement("span");
+                dot.className = "profit-pill-dot";
+                const valueSpan = document.createElement("span");
+                valueSpan.textContent = formatProfit(entry.profit);
+                badge.appendChild(dot);
+                badge.appendChild(valueSpan);
+                profitCell.appendChild(badge);
+
+                row.appendChild(pathCell);
+                row.appendChild(legsCell);
+                row.appendChild(profitCell);
+
+                row.addEventListener("click", () => {
+                    selectedPath = entry.path;
+                    openDetailForPath(entry.path, entry);
+                });
+
+                tableBody.appendChild(row);
+            });
+
+            updateSummary(entries, Object.keys(lastData || {}).length);
+        }
+
+        socket.on("update_arbitrage", (data) => {
+            const now = new Date();
+            lastUpdatedEl.textContent = "Updated " + now.toLocaleTimeString();
+            if (!liveUpdates) {
+                return;
+            }
+            renderTable(data);
+        });
+
+        minProfitInput.addEventListener("input", () => {
+            renderTable(lastData);
+        });
+
+        liveToggle.addEventListener("click", () => {
+            liveUpdates = !liveUpdates;
+            liveToggle.setAttribute("data-state", liveUpdates ? "on" : "off");
+            liveModeLabel.textContent = liveUpdates ? "Live" : "Paused";
+            liveStatusCaption.textContent = liveUpdates ? "Receiving updates" : "Frozen, ignoring new ticks";
+        });
+
+        refreshButton.addEventListener("click", () => {
+            renderTable(lastData);
+        });
+
+        function openDetailForPath(pathKey, summaryEntry) {
+            const raw = lastData[pathKey];
+            if (!raw) {
+                detailCard.style.display = "none";
+                return;
+            }
+            const nodes = Array.isArray(raw.path) && raw.path.length > 0
+                ? raw.path
+                : pathKey.split("->").map(p => p.trim());
+            const legRates = Array.isArray(raw.leg_rates) ? raw.leg_rates : [];
+            const totalReturn = typeof raw.total_return === "number" ? raw.total_return : (summaryEntry ? summaryEntry.totalReturn : 1);
+            const profitPercent = typeof raw.profit_percent === "number" ? raw.profit_percent : (summaryEntry ? summaryEntry.profit : 0);
+
+            detailPathEl.textContent = pathKey;
+            detailLegsCountEl.textContent = String(Math.max(0, nodes.length - 1));
+            detailProfitEl.textContent = formatProfit(profitPercent);
+            detailReturnEl.textContent = totalReturn.toFixed(4) + "×";
+
+            detailLegsEl.innerHTML = "";
+            for (let i = 0; i < nodes.length - 1; i++) {
+                const from = nodes[i];
+                const to = nodes[i + 1];
+                const rate = legRates[i];
+                const row = document.createElement("div");
+                row.className = "detail-leg-row";
+
+                const pairEl = document.createElement("div");
+                pairEl.className = "detail-leg-pair";
+                pairEl.textContent = from + " → " + to;
+
+                const rateEl = document.createElement("div");
+                rateEl.className = "detail-leg-rate";
+                if (typeof rate === "number" && rate > 0) {
+                    rateEl.textContent = "×" + rate.toFixed(6);
+                } else {
+                    rateEl.textContent = "–";
+                }
+
+                const profitEl = document.createElement("div");
+                profitEl.className = "detail-leg-profit";
+                if (typeof rate === "number" && rate > 0) {
+                    const legProfit = (rate - 1) * 100;
+                    profitEl.textContent = legProfit.toFixed(4) + "%";
+                    profitEl.classList.add(legProfit >= 0 ? "positive" : "negative");
+                } else {
+                    profitEl.textContent = "";
+                }
+
+                row.appendChild(pairEl);
+                row.appendChild(rateEl);
+                row.appendChild(profitEl);
+                detailLegsEl.appendChild(row);
+            }
+
+            detailCard.style.display = "block";
+        }
+
+        detailCloseBtn.addEventListener("click", () => {
+            selectedPath = null;
+            detailCard.style.display = "none";
+        });
+
+        function setTheme(mode) {
+            const isDark = mode === "dark";
+            root.setAttribute("data-theme", isDark ? "dark" : "light");
+            themeDarkBtn.dataset.active = isDark ? "true" : "false";
+            themeLightBtn.dataset.active = isDark ? "false" : "true";
+        }
+
+        themeDarkBtn.addEventListener("click", () => setTheme("dark"));
+        themeLightBtn.addEventListener("click", () => setTheme("light"));
+    </script>
+</body>
+</html>
